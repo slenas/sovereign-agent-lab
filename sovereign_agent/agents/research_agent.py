@@ -69,7 +69,7 @@ load_dotenv()
 llm = ChatOpenAI(
     base_url="https://api.tokenfactory.nebius.com/v1/",
     api_key=os.getenv("NEBIUS_KEY"),
-    model="meta-llama/Llama-3.3-70B-Instruct",
+    model="Qwen/Qwen3-30B-A3B-Instruct-2507",
     temperature=0,
 )
 
@@ -122,16 +122,28 @@ def run_research_agent(task: str, max_turns: int = 8) -> dict:
         role    = getattr(m, "type", "unknown")
         content = m.content
 
+        # OpenAI-style tool calls (e.g., Qwen via ChatOpenAI-compatible API)
+        tool_calls = getattr(m, "tool_calls", None) or []
+        for tc in tool_calls:
+            entry = {
+                "tool": tc.get("name", "unknown_tool"),
+                "args": tc.get("args", {}) or {},
+            }
+            tool_calls_made.append(entry)
+            full_trace.append({"role": "tool_call", **entry})
+
         # Tool-call messages have structured list content
+        # Fallback for providers that encode tool calls in content blocks
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     entry = {
-                        "tool": block["name"],
-                        "args": block.get("input", {}),
+                        "tool": block.get("name", "unknown_tool"),
+                        "args": block.get("input", {}) or {},
                     }
-                    tool_calls_made.append(entry)
-                    full_trace.append({"role": "tool_call", **entry})
+                    if entry not in tool_calls_made:
+                        tool_calls_made.append(entry)
+                        full_trace.append({"role": "tool_call", **entry})
             continue
 
         if content:
