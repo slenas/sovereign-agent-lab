@@ -70,16 +70,11 @@ Is there anything else I can help you with?
 """
 
 CONVERSATION_2_OUTCOME = "escalated"   # "confirmed" or "escalated"
-CONVERSATION_2_REASON  = "ActionValidateBooking class has a run method that has a number of guards with certain designated actions if any of them is violated. There's a clear guard on any deposits above £300. Since the model interpreted the proposed deposit correctly at £500 this exceeds that £300 guard value so the agent escalates."   # the reason the agent gave for escalating
+CONVERSATION_2_REASON  = "ActionValidateBooking class has a run method that has a number of guardrails with certain designated actions if any of them is violated. There's a clear guardrail on any deposits above £300. Since the model interpreted the proposed deposit correctly at £500 this exceeds that £300 guard value so the agent escalates."   # the reason the agent gave for escalating
 
 # ── Conversation 3: Out of scope ───────────────────────────────────────────
 
 CONVERSATION_3_TRACE = """
-PASTE YOUR rasa shell TERMINAL OUTPUT HERE
-"""
-
-# Describe what CALM did after the out-of-scope message. Min 20 words.
-CONVERSATION_3_WHAT_HAPPENED = """
 Your input ->  calling to confirm a booking
 How many guests are you confirming for tonight's event?
 Your input ->  160
@@ -88,6 +83,11 @@ Your input ->  can you arrange parking for the speakers?
 I'm sorry, I'm not trained to help with that.
 I can only help with confirming tonight's venue booking. For anything else, please contact the event organiser directly.
 Would you like to continue with confirm booking?
+"""
+
+# Describe what CALM did after the out-of-scope message. Min 20 words.
+CONVERSATION_3_WHAT_HAPPENED = """
+CALM managed to identify that the question was out-of-scope, and router the flow towards the out-of-scope handler. As a direct result of that, it informed the user that it's not trained to help with that and rightly asked the user to contact the organiser directly.
 """
 
 # Compare Rasa CALM's handling of the out-of-scope request to what
@@ -105,7 +105,7 @@ TASK_B_FILES_CHANGED = ["actions.py"]
 
 # How did you test that it works? Min 20 words.
 TASK_B_HOW_YOU_TESTED = """
-Run the above dialog after 16:45. The system detected the now() UTC time and based on that it needed to escalate the request.
+I run the above dialog after 16:45. The system detected the now() UTC time and based on that it needed to escalate the request as we just activated in actions.py another guardrail around the time the request is made.
 Your input ->  calling to confirm a booking
 How many guests are you confirming for tonight's event?
 Your input ->  160
