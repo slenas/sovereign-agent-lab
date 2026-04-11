@@ -37,6 +37,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from langchain_core.tools import StructuredTool
@@ -44,6 +45,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from pydantic import create_model
 
 load_dotenv()
 
@@ -64,6 +66,36 @@ OUTPUTS_DIR.mkdir(exist_ok=True)
 # Each closure must capture its own tool_name. If we used a lambda in a loop,
 # every closure would share the last value of tool_name — a classic Python gotcha.
 
+# JSON-schema type → Python type mapping used when building pydantic models
+_JSON_TYPE_MAP: dict[str, Any] = {
+    "string":  str,
+    "integer": int,
+    "number":  float,
+    "boolean": bool,
+    "array":   list,
+    "object":  dict,
+}
+
+
+def _schema_to_pydantic(tool_name: str, input_schema: dict):
+    """
+    Convert an MCP inputSchema dict into a pydantic model class so that
+    LangChain can parse and validate the tool's arguments properly.
+    Without this, StructuredTool receives args_schema=None and the ReAct
+    loop cannot dispatch the tool call — it just prints raw JSON instead.
+    """
+    properties = (input_schema or {}).get("properties", {})
+    required   = set((input_schema or {}).get("required", []))
+    fields: dict[str, Any] = {}
+    for field_name, field_info in properties.items():
+        py_type = _JSON_TYPE_MAP.get(field_info.get("type", "string"), str)
+        if field_name in required:
+            fields[field_name] = (py_type, ...)
+        else:
+            fields[field_name] = (Optional[py_type], None)
+    return create_model(f"{tool_name}_schema", **fields)
+
+
 def _make_mcp_caller(tool_name: str, server_script: str):
     def call(**kwargs) -> str:
         async def _inner() -> str:
@@ -71,7 +103,7 @@ def _make_mcp_caller(tool_name: str, server_script: str):
             async with stdio_client(params) as (r, w):
                 async with ClientSession(r, w) as session:
                     await session.initialize()
-                    result = await session.call_tool(tool_name, kwargs)
+                    result = await session.call_tool(tool_name, arguments=kwargs)
                     return result.content[0].text if result.content else "{}"
         return asyncio.run(_inner())
     call.__name__ = tool_name
@@ -93,10 +125,15 @@ async def discover_tools(server_script: str) -> list:
             raw   = await session.list_tools()
             tools = []
             for t in raw.tools:
+                schema = _schema_to_pydantic(
+                    t.name,
+                    getattr(t, "inputSchema", None) or {}
+                )
                 lc_tool = StructuredTool.from_function(
                     func=_make_mcp_caller(t.name, server_script),
                     name=t.name,
                     description=t.description or f"MCP tool: {t.name}",
+                    args_schema=schema,
                 )
                 tools.append(lc_tool)
             return tools, [t.name for t in raw.tools]
